@@ -59,24 +59,6 @@ export const routes: Array<IRoute> = [
     ],
   },
   {
-    path: '/admin/account',
-    name: '账号管理',
-    icon: TableOutlined,
-    component: null,
-    children: [
-      {
-        path: '/realNameAccount',
-        name: '实名资料',
-        component: RealNameAccount,
-      },
-      {
-        path: '/jdAccount',
-        name: '京东账号',
-        component: JDAccount,
-      },
-    ],
-  },
-  {
     path: '/admin/partner',
     name: '合作商管理',
     icon: ShopOutlined,
@@ -144,18 +126,5 @@ export const routes: Array<IRoute> = [
         component: TradingRecord,
       },
     ],
-  },
-  // {
-  //   path: '/admin/setting',
-  //   name: '系统设置',
-  //   icon: SettingOutlined,
-  //   component: null,
-  //   children: [
-  //     {
-  //       path: '/config',
-  //       name: '配置',
-  //       component: SystemConfig,
-  //     },
-  //   ],
-  // },
+  }
 ];
