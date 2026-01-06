@@ -1,0 +1,16 @@
+env: dev
+payment_http:
+  host: 0.0.0.0
+  port: 9000
+web_http:
+  port: 8000
+mysql:
+    # uri: root:apollo666@tcp(127.0.0.1:3306)/apollo?charset=utf8mb4&parseTime=True&loc=Local
+    uri: root:12345678@tcp(127.0.0.1:3306)/apollo?charset=utf8mb4&parseTime=True&loc=Local
+    # uri: root:abc123!!!@tcp(127.0.0.1:3306)/gva?charset=utf8mb4&parseTime=True&loc=Local
+redis:
+    addr: 127.0.0.1:6375
+    password: ""
+    db: 0
+    read_timeout: 0.2s
+    write_timeout: 0.2s
