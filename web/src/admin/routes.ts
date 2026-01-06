@@ -13,8 +13,6 @@ import OperationLog from './OperationLog';
 import PartnerDailyBill from './PartnerDailyBill';
 import MerchantDailyBill from './MerchantDailyBill';
 import DailyBill from './DailyBill';
-import RealNameAccount from './RealNameAccount';
-import JDAccount from './JDAccount';
 
 export interface IRoute {
   name: string
@@ -127,5 +125,5 @@ export const routes: Array<IRoute> = [
       },
     ],
   }
-  
+
 ];
