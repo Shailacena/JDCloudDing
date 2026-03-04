@@ -1,5 +1,7 @@
 # React + TypeScript + Vite
 
+# npm install
+
 # npm run dev
 
 68B385283381EBA1FD9C6C8EF3ECDAD2
