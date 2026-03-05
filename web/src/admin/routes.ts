@@ -37,25 +37,25 @@ export const routes: Array<IRoute> = [
     component: ServerStatus,
     icon: MergeCellsOutlined,
   },
-  {
-    path: '/admin/manager',
-    name: '管理员',
-    icon: UserOutlined,
-    component: null,
-    inPermission: RoleType.Admin,
-    children: [
-      {
-        path: '/list',
-        name: '管理员列表',
-        component: Admin,
-      },
-      {
-        path: '/operationLog',
-        name: '操作日志',
-        component: OperationLog,
-      },
-    ],
-  },
+  // {
+  //   path: '/admin/manager',
+  //   name: '管理员',
+  //   icon: UserOutlined,
+  //   component: null,
+  //   inPermission: RoleType.Admin,
+  //   children: [
+  //     {
+  //       path: '/list',
+  //       name: '管理员列表',
+  //       component: Admin,
+  //     },
+  //     {
+  //       path: '/operationLog',
+  //       name: '操作日志',
+  //       component: OperationLog,
+  //     },
+  //   ],
+  // },
   {
     path: '/admin/partner',
     name: '合作商管理',
