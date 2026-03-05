@@ -5,8 +5,9 @@ import (
 	"apollo/server/internal/model"
 	"apollo/server/pkg/data"
 	"apollo/server/pkg/util"
-	"github.com/samber/lo"
 	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
@@ -95,7 +96,7 @@ func (r *OrderRepo) QueryResultByMerchant(c echo.Context, db *gorm.DB, merchantI
 			merchant_id,
 			SUM(CASE WHEN status IN (?) THEN amount ELSE 0 END) AS today_success_amount
 		`, model.OrderStatusFinish).
-		Where("merchant_id IN (?) AND DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) = DATE(CONVERT_TZ(?, '+00:00', '+08:00'))", merchantIds, day).
+		Where("merchant_id IN (?) AND DATE(created_at) = DATE(?)", merchantIds, day).
 		Group("merchant_id").
 		Find(&results).Error
 	if err != nil {
@@ -125,7 +126,7 @@ func (r *OrderRepo) QueryMerchantOrder(c echo.Context, db *gorm.DB, merchantIds 
 		Model(&model.Order{}).
 		Select(`
 		merchant_id,
-		DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) AS date,
+		DATE(created_at) AS date,
 		COUNT(*) AS today_order_num,
 		SUM(amount) AS today_order_amount,
 		SUM(CASE WHEN status IN (?) THEN amount ELSE 0 END) AS today_success_amount,
@@ -163,7 +164,7 @@ func (r *OrderRepo) QueryResultByPartner(c echo.Context, db *gorm.DB, partnerIds
 			SUM(CASE WHEN status IN (?) THEN received_amount ELSE 0 END) AS today_success_amount,
 			SUM(CASE WHEN status IN (?) THEN 1 ELSE 0 END) AS today_success_order_num
 		`, model.SuccessOrderStatus, model.SuccessOrderStatus).
-		Where("partner_id IN (?) AND DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) = DATE(CONVERT_TZ(?, '+00:00', '+08:00'))", partnerIds, day).
+		Where("partner_id IN (?) AND DATE(created_at) = DATE(?)", partnerIds, day).
 		Group("partner_id").
 		Find(&results).Error
 	if err != nil {
@@ -193,7 +194,7 @@ func (r *OrderRepo) QueryPartnerOrder(c echo.Context, db *gorm.DB, partnerIds []
 		Model(&model.Order{}).
 		Select(`
 		partner_id,
-		DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')) AS date,
+		DATE(created_at) AS date,
 		COUNT(*) AS today_order_num,
 		SUM(amount) AS today_order_amount,
 		SUM(CASE WHEN status IN (?) THEN received_amount ELSE 0 END) AS today_success_amount,
@@ -320,21 +321,21 @@ func (r *OrderRepo) List(c echo.Context, req *v1.ListOrderReq, parentIds []uint)
 	if len(req.StartAt) > 0 && len(req.EndAt) > 0 {
 		// 获取 PRC 时区
 		prcLocation, _ := time.LoadLocation("Asia/Shanghai")
-		
+
 		// 尝试解析完整的时间格式 "2006-01-02 15:04:05"
 		startAt, err := time.ParseInLocation("2006-01-02 15:04:05", req.StartAt, prcLocation)
 		if err != nil {
 			// 如果失败，尝试解析日期格式 "2006-01-02"
 			startAt, _ = time.ParseInLocation(time.DateOnly, req.StartAt, prcLocation)
 		}
-		
+
 		endTime, err := time.ParseInLocation("2006-01-02 15:04:05", req.EndAt, prcLocation)
 		if err != nil {
 			// 如果失败，尝试解析日期格式 "2006-01-02" 并添加24小时
 			endTime, _ = time.ParseInLocation(time.DateOnly, req.EndAt, prcLocation)
 			endTime = endTime.Add(24 * time.Hour)
 		}
-		
+
 		db = db.Where("created_at BETWEEN ? AND ?", startAt, endTime)
 	}
 
@@ -394,7 +395,7 @@ func (r *OrderRepo) Statistics(c echo.Context, req StatisticsReq) ([]*v1.BaseDai
 	err := db.
 		Model(&model.Order{}).
 		Select(`
-		DATE_FORMAT(DATE(CONVERT_TZ(created_at, '+00:00', '+08:00')), '%Y-%m-%d') AS date,
+		DATE_FORMAT(DATE(created_at), '%Y-%m-%d') AS date,
 		SUM(amount) AS total_order_amount,
 		COUNT(*) AS total_order_num,
 		SUM(CASE WHEN status IN (?) THEN received_amount ELSE 0 END) AS total_success_amount,
@@ -410,79 +411,79 @@ func (r *OrderRepo) Statistics(c echo.Context, req StatisticsReq) ([]*v1.BaseDai
 }
 
 type OrderArchiveSummary struct {
-    Total float64
+	Total float64
 }
 
 func (r *OrderRepo) ArchiveByAdmin(c echo.Context, adminId uint) (*model.OrderArchive, error) {
-    db := data.Instance()
+	db := data.Instance()
 
-    var admin model.SysUser
-    if err := db.Where("id = ?", adminId).First(&admin).Error; err != nil {
-        return nil, err
-    }
+	var admin model.SysUser
+	if err := db.Where("id = ?", adminId).First(&admin).Error; err != nil {
+		return nil, err
+	}
 
-    if admin.Role != model.NormalAdminRole || admin.MasterId != 0 {
-        return nil, echo.NewHTTPError(403, "仅主账号可归档")
-    }
+	if admin.Role != model.NormalAdminRole || admin.MasterId != 0 {
+		return nil, echo.NewHTTPError(403, "仅主账号可归档")
+	}
 
-    ids, err := Admin.FindAdminIds(c, admin.ID, admin.Role)
-    if err != nil {
-        return nil, err
-    }
+	ids, err := Admin.FindAdminIds(c, admin.ID, admin.Role)
+	if err != nil {
+		return nil, err
+	}
 
-    query := "`order`.partner_id IN (SELECT id FROM partner WHERE parent_id IN ?) OR `order`.merchant_id IN (SELECT id FROM merchant WHERE parent_id IN ?)"
+	query := "`order`.partner_id IN (SELECT id FROM partner WHERE parent_id IN ?) OR `order`.merchant_id IN (SELECT id FROM merchant WHERE parent_id IN ?)"
 
-    var totalOrderCount int64
-    if err := db.Model(&model.Order{}).Where(query, ids, ids).Count(&totalOrderCount).Error; err != nil {
-        return nil, err
-    }
+	var totalOrderCount int64
+	if err := db.Model(&model.Order{}).Where(query, ids, ids).Count(&totalOrderCount).Error; err != nil {
+		return nil, err
+	}
 
-    var summary OrderSummary
-    if err := db.Model(&model.Order{}).Select("SUM(received_amount) as total_amount").Where(query, ids, ids).Where("status IN (?)", model.SuccessOrderStatus).Find(&summary).Error; err != nil {
-        return nil, err
-    }
+	var summary OrderSummary
+	if err := db.Model(&model.Order{}).Select("SUM(received_amount) as total_amount").Where(query, ids, ids).Where("status IN (?)", model.SuccessOrderStatus).Find(&summary).Error; err != nil {
+		return nil, err
+	}
 
-    record := model.OrderArchive{
-        MasterId:    adminId,
-        ArchiveDate: time.Now(),
-        TotalAmount: util.ToDecimal(summary.TotalAmount),
-        OrderCount:  totalOrderCount,
-    }
+	record := model.OrderArchive{
+		MasterId:    adminId,
+		ArchiveDate: time.Now(),
+		TotalAmount: util.ToDecimal(summary.TotalAmount),
+		OrderCount:  totalOrderCount,
+	}
 
-    if err := db.Transaction(func(tx *gorm.DB) error {
-        if err := tx.Create(&record).Error; err != nil {
-            return err
-        }
-        if err := tx.Where(query, ids, ids).Delete(&model.Order{}).Error; err != nil {
-            return err
-        }
-        return nil
-    }); err != nil {
-        return nil, err
-    }
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&record).Error; err != nil {
+			return err
+		}
+		if err := tx.Where(query, ids, ids).Delete(&model.Order{}).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
 
-    return &record, nil
+	return &record, nil
 }
 
 func (r *OrderRepo) SumArchivedAmountByAdminIds(c echo.Context, adminIds []uint) (float64, error) {
-    db := data.Instance()
-    var total float64
-    if len(adminIds) == 0 {
-        return 0, nil
-    }
-    if err := db.Model(&model.OrderArchive{}).Select("COALESCE(SUM(total_amount),0)").Where("master_id IN (?)", adminIds).Scan(&total).Error; err != nil {
-        return 0, err
-    }
-    return util.ToDecimal(total), nil
+	db := data.Instance()
+	var total float64
+	if len(adminIds) == 0 {
+		return 0, nil
+	}
+	if err := db.Model(&model.OrderArchive{}).Select("COALESCE(SUM(total_amount),0)").Where("master_id IN (?)", adminIds).Scan(&total).Error; err != nil {
+		return 0, err
+	}
+	return util.ToDecimal(total), nil
 }
 
 func (r *OrderRepo) SumAllArchivedAmount(c echo.Context) (float64, error) {
-    db := data.Instance()
-    var total float64
-    if err := db.Model(&model.OrderArchive{}).Select("COALESCE(SUM(total_amount),0)").Scan(&total).Error; err != nil {
-        return 0, err
-    }
-    return util.ToDecimal(total), nil
+	db := data.Instance()
+	var total float64
+	if err := db.Model(&model.OrderArchive{}).Select("COALESCE(SUM(total_amount),0)").Scan(&total).Error; err != nil {
+		return 0, err
+	}
+	return util.ToDecimal(total), nil
 }
 
 type OrderSummary struct {
