@@ -17,4 +17,5 @@ func InitMigrate(db *gorm.DB) {
 	db.AutoMigrate(&MerchantBalanceBill{})
 	db.AutoMigrate(&OperationLog{})
 	db.AutoMigrate(&OrderArchive{})
+	db.AutoMigrate(&PriceCard{})
 }

@@ -1,4 +1,4 @@
-import { HomeOutlined, MergeCellsOutlined, UserOutlined, ShopOutlined, PayCircleOutlined, TableOutlined } from '@ant-design/icons';
+import { HomeOutlined, MergeCellsOutlined, UserOutlined, ShopOutlined, PayCircleOutlined, TableOutlined, CreditCardOutlined } from '@ant-design/icons';
 import Dashboard from './Dashboard';
 import ServerStatus from './ServerStatus';
 import Admin from './Admin';
@@ -13,6 +13,8 @@ import OperationLog from './OperationLog';
 import PartnerDailyBill from './PartnerDailyBill';
 import MerchantDailyBill from './MerchantDailyBill';
 import DailyBill from './DailyBill';
+import RealCardPage from './RealCard';
+import VirtualCardPage from './VirtualCard';
 
 export interface IRoute {
   name: string
@@ -56,6 +58,24 @@ export const routes: Array<IRoute> = [
   //     },
   //   ],
   // },
+  {
+    path: '/admin/priceCard',
+    name: '卡密管理',
+    icon: CreditCardOutlined,
+    component: null,
+    children: [
+      {
+        path: '/list',
+        name: '真实卡密',
+        component: RealCardPage,
+      },
+      {
+        path: '/virtualList',
+        name: '虚拟卡密',
+        component: VirtualCardPage,
+      },
+    ],
+  },
   {
     path: '/admin/partner',
     name: '合作商管理',

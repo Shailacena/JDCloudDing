@@ -665,3 +665,69 @@ export interface GetMasterIncomeReq {
 export interface GetMasterIncomeResp {
   totalIncome?: number;
 }
+
+export interface CardInfo {
+  cardNo: string;
+  password: string;
+  cardGroup: string;
+  amount: number;
+}
+
+export interface CardCreateReq {
+  cards: CardInfo[];
+}
+
+export interface CardCreateResp {
+  count: number;
+}
+
+export interface VirtualCardGenerateReq {
+  prefix: string;
+  cardNoLen: number;
+  passwordLen: number;
+  cardGroup: string;
+  amount: number;
+  count: number;
+}
+
+export interface VirtualCardGenerateResp {
+  count: number;
+}
+
+export interface ListCardReq {
+  cardNo?: string;
+  cardGroup?: string;
+  batchNo?: string;
+  startTime?: string;
+  endTime?: string;
+  cardType?: string;
+  currentPage?: number;
+  pageSize?: number;
+}
+
+export interface IPriceCard {
+  id: number;
+  cardNo: string;
+  password: string;
+  cardGroup: string;
+  amount: number;
+  cardType: string;
+  batchNo: string;
+  usedStatus: boolean;
+  orderId: string;
+  usedAt: number;
+  createAt: number;
+}
+
+export interface ListCardResp {
+  list: Array<IPriceCard>;
+  total: number;
+}
+
+export interface DeleteCardReq {
+  ids: number[];
+}
+
+export interface DeleteCardResp {
+  count: number;
+}

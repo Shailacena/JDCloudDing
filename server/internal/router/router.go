@@ -90,6 +90,15 @@ func Init(e *echo.Echo) {
 		goodsGroup.POST("/list", handler.Goods.List)
 	}
 
+	priceCardGroup := apiGroup.Group("/priceCard", adminTokenChecker(), middleware.HandleOperationLogMiddleware())
+	{
+		priceCardGroup.POST("/create", handler.PriceCard.Create)
+		priceCardGroup.POST("/generateVirtual", handler.PriceCard.GenerateVirtual)
+		priceCardGroup.GET("/list", handler.PriceCard.List)
+		priceCardGroup.POST("/delete", handler.PriceCard.Delete)
+		priceCardGroup.POST("/deleteByCondition", handler.PriceCard.DeleteByCondition)
+	}
+
 	orderGroup := apiGroup.Group("/order", adminTokenChecker(), middleware.HandleOperationLogMiddleware())
 	{
 		orderGroup.GET("/list", handler.Order.List)

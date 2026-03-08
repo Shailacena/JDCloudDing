@@ -111,6 +111,14 @@ import {
   GetTodayTrendResp,
   ArchiveOrdersReq,
   ArchiveOrdersResp,
+  ListCardReq,
+  ListCardResp,
+  CardCreateReq,
+  CardCreateResp,
+  VirtualCardGenerateReq,
+  VirtualCardGenerateResp,
+  DeleteCardReq,
+  DeleteCardResp,
 } from "./types";
 
 export function useApis() {
@@ -329,6 +337,38 @@ export function useApis() {
     },
     goodsDelete(data: GoodsDeleteReq): Promise<IResponseBody<GoodsDeleteResp>> {
       return ax.post("/goods/delete", data).then((res) => {
+        return res?.data;
+      });
+    },
+
+    // 卡密管理
+    listRealCard(params: ListCardReq): Promise<IResponseBody<ListCardResp>> {
+      return ax.get("/priceCard/list", { ...params, cardType: 'real' }).then((res) => {
+        return res?.data;
+      });
+    },
+    listVirtualCard(params: ListCardReq): Promise<IResponseBody<ListCardResp>> {
+      return ax.get("/priceCard/list", { ...params, cardType: 'virtual' }).then((res) => {
+        return res?.data;
+      });
+    },
+    cardCreate(data: CardCreateReq): Promise<IResponseBody<CardCreateResp>> {
+      return ax.post("/priceCard/create", data).then((res) => {
+        return res?.data;
+      });
+    },
+    cardGenerateVirtual(data: VirtualCardGenerateReq): Promise<IResponseBody<VirtualCardGenerateResp>> {
+      return ax.post("/priceCard/generateVirtual", data).then((res) => {
+        return res?.data;
+      });
+    },
+    cardDelete(data: DeleteCardReq): Promise<IResponseBody<DeleteCardResp>> {
+      return ax.post("/priceCard/delete", data).then((res) => {
+        return res?.data;
+      });
+    },
+    cardDeleteByCondition(data: ListCardReq): Promise<IResponseBody<DeleteCardResp>> {
+      return ax.post("/priceCard/deleteByCondition", data).then((res) => {
         return res?.data;
       });
     },
