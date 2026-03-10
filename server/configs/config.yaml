@@ -18,16 +18,6 @@ redis:
     read_timeout: 0.2s
     write_timeout: 0.2s
 
-jcq:
-  access_key: "your-ak"
-  secret_key: "your-sk"
-  topic: "your-topic"
-  consumer_group_id: "your-consumer-group"
-  http_url: "https://jcq-shared-004.cn-north-1.jdcloud.com"
-  auto_ack: false
-  poll_size: 5
-  poll_interval_seconds: 1
-
 jdcloud:
   app_key: "your-app-key"
   app_secret: "your-app-secret"

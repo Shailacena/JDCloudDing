@@ -17,29 +17,17 @@ func IsProd() bool {
 }
 
 type ServerConfig struct {
-	Env               string      `mapstructure:"env"`
-	PaymentHttpConfig HttpConfig  `mapstructure:"payment_http"`
-	WebHttpConfig     HttpConfig  `mapstructure:"web_http"`
-	MysqlConfig       MysqlConfig `mapstructure:"mysql"`
-	RedisConfig       RedisConfig `mapstructure:"redis"`
-	JCQConfig         JCQConfig   `mapstructure:"jcq"`
+	Env               string        `mapstructure:"env"`
+	PaymentHttpConfig HttpConfig    `mapstructure:"payment_http"`
+	WebHttpConfig     HttpConfig    `mapstructure:"web_http"`
+	MysqlConfig       MysqlConfig   `mapstructure:"mysql"`
+	RedisConfig       RedisConfig   `mapstructure:"redis"`
 	JDCloudConfig     JDCloudConfig `mapstructure:"jdcloud"`
 }
 
 type HttpConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"port"`
-}
-
-type JCQConfig struct {
-	AccessKey           string `mapstructure:"access_key"`
-	SecretKey           string `mapstructure:"secret_key"`
-	Topic               string `mapstructure:"topic"`
-	ConsumerGroupID     string `mapstructure:"consumer_group_id"`
-	HTTPURL             string `mapstructure:"http_url"`
-	AutoAck             bool   `mapstructure:"auto_ack"`
-	PollSize            int    `mapstructure:"poll_size"`
-	PollIntervalSeconds int    `mapstructure:"poll_interval_seconds"`
 }
 
 type JDCloudConfig struct {
