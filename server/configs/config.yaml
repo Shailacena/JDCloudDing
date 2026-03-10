@@ -27,3 +27,8 @@ jcq:
   auto_ack: false
   poll_size: 5
   poll_interval_seconds: 1
+
+jdcloud:
+  app_key: "your-app-key"
+  app_secret: "your-app-secret"
+  token: "your-token"

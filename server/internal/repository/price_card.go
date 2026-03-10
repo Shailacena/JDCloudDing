@@ -143,6 +143,14 @@ func (r *PriceCardRepo) UseCard(c echo.Context, cardNo, orderId string) error {
 	}).Error
 }
 
+func (r *PriceCardRepo) GetAvailableCards(db *gorm.DB, amount float64, cardType model.CardType, count int) ([]model.PriceCard, error) {
+	var cards []model.PriceCard
+	err := db.Where("amount = ? AND card_type = ? AND used_status = ?", amount, cardType, false).
+		Limit(count).
+		Find(&cards).Error
+	return cards, err
+}
+
 func generateCardNo(prefix string, length int) string {
 	digitCount := length - len(prefix)
 	if digitCount < 0 {

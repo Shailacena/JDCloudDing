@@ -23,6 +23,7 @@ type ServerConfig struct {
 	MysqlConfig       MysqlConfig `mapstructure:"mysql"`
 	RedisConfig       RedisConfig `mapstructure:"redis"`
 	JCQConfig         JCQConfig   `mapstructure:"jcq"`
+	JDCloudConfig     JDCloudConfig `mapstructure:"jdcloud"`
 }
 
 type HttpConfig struct {
@@ -39,6 +40,12 @@ type JCQConfig struct {
 	AutoAck             bool   `mapstructure:"auto_ack"`
 	PollSize            int    `mapstructure:"poll_size"`
 	PollIntervalSeconds int    `mapstructure:"poll_interval_seconds"`
+}
+
+type JDCloudConfig struct {
+	AppKey    string `mapstructure:"app_key"`
+	AppSecret string `mapstructure:"app_secret"`
+	Token     string `mapstructure:"token"`
 }
 
 type MysqlConfig struct {

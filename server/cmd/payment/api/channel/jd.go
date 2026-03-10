@@ -169,6 +169,79 @@ func NewJDPayNotify(fromPlatform, timestamp, aopic, sign, jsonStr string) (*JDPa
 	}, nil
 }
 
+func NewJDPayNotifyForJDCloud(db *gorm.DB, orderId, skuId, gameAccount string) *JDPayNotify {
+	return &JDPayNotify{
+		db: db,
+		jsonData: types.JDJsonData{
+			OrderId:    cast.ToInt64(orderId),
+			SkuId:      cast.ToInt64(skuId),
+			GameAccount: gameAccount,
+		},
+	}
+}
+
+func (jdn *JDPayNotify) NotifyTransaction(c echo.Context, db *gorm.DB, partner *model.Partner, partnerOrderId string) error {
+	var o *model.Order
+	var err error
+
+	err = db.Transaction(func(tx *gorm.DB) error {
+		skuId := cast.ToString(jdn.jsonData.SkuId)
+		kw := partnerOrderId
+		if len(jdn.jsonData.GameAccount) > 0 {
+			kw = jdn.jsonData.GameAccount
+		}
+
+		o, err = repository.Order.GetBySkuIdDarkNumber(c, tx, skuId, kw)
+		if err != nil {
+			return fmt.Errorf("findOrderBySkuId, gameAccount=%s, error: %s", kw, err.Error())
+		}
+
+		if o == nil {
+			return fmt.Errorf("订单未找到, orderId=%s, skuId=%s", partnerOrderId, skuId)
+		}
+
+		if o.Status == model.OrderStatusFinish {
+			return fmt.Errorf("订单已完成, orderId=%s, skuId=%s, order.Status=%d", o.OrderId, skuId, o.Status)
+		}
+
+		o.Status = model.OrderStatusPaid
+		err = tx.Save(o).Error
+		if err != nil {
+			return fmt.Errorf("更新订单状态失败: %s", err.Error())
+		}
+
+		err = common.UpdatePartnerBalance(c, tx, o)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if o == nil {
+		return fmt.Errorf("订单是nil")
+	}
+
+	err = common.NotifyMerchant(contextx.NewContextFromEcho(c), db, o)
+	if err != nil {
+		return fmt.Errorf("NotifyMerchant error= %s", err.Error())
+	}
+
+	if partner != nil {
+		err = jdn.RechargeSend(c, partner, partnerOrderId)
+		if err != nil {
+			c.Logger().Error("自动发货失败:", err)
+		} else {
+			c.Logger().Info("自动发货成功:", partnerOrderId)
+		}
+	}
+
+	return nil
+}
+
 func (jdn *JDPayNotify) Handle(c echo.Context) error {
 	var err error
 	db := jdn.db

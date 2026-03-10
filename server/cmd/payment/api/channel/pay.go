@@ -5,6 +5,8 @@ import (
 	"apollo/server/cmd/payment/pkg/errorx"
 	"apollo/server/cmd/payment/pkg/types"
 	"apollo/server/internal/model"
+
+	"gorm.io/gorm"
 )
 
 func GetPayByChannelId(channelId string, merchantId int32) (iface.IOrder, error) {
@@ -20,6 +22,8 @@ func GetPayByChannelId(channelId string, merchantId int32) (iface.IOrder, error)
 		instance, err = NewJDPay(merchantId)
 	case model.ChannelJDCk:
 		instance, err = NewJDCKPay(merchantId)
+	case model.ChannelJDCard:
+		instance, err = NewJDCard(merchantId)
 	default:
 		err = errorx.ErrInvalidChannelId
 	}
@@ -49,4 +53,8 @@ func GetNotifyByPlatform(fromPlatform, timestamp, aopic, sign, jsonStr string) (
 	}
 
 	return instance, nil
+}
+
+func GetJDCardNotify(db *gorm.DB, orderId int64, skuId string, gameAccount string) *JDCardNotify {
+	return NewJDCardNotify(db, orderId, skuId, gameAccount)
 }

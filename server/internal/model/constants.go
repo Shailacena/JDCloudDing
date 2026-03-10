@@ -74,6 +74,7 @@ const (
 	ChannelTBECoupon       ChannelId = "TB087888" // 淘宝电子券
 	ChannelJDPay           ChannelId = "JS000000" // 京东复制
 	ChannelJDCk            ChannelId = "JS111111" // 京东ck
+	ChannelJDCard          ChannelId = "JS222222" // 京东卡
 )
 
 type ConfirmStatus int

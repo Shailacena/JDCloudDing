@@ -271,6 +271,7 @@ func main() {
 	notifyGroup.POST("/agiso", api.AgisoNotify)
 	notifyGroup.POST("/anssy", api.AnssyNotify)
 	notifyGroup.GET("/anssy/auth", api.AnssyAuthNotify)
+	notifyGroup.POST("/jdcloud", api.JDCloudNotify)
 
 	port := fmt.Sprintf(":%d", conf.PaymentHttpConfig.Port)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
