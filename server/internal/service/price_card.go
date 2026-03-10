@@ -19,13 +19,13 @@ func (s *PriceCardService) CreateCards(c echo.Context, req *v1.CardCreateReq) (*
 
 	for _, card := range req.Cards {
 		cards = append(cards, model.PriceCard{
-			CardNo:     card.CardNo,
-			Password:   card.Password,
-			CardGroup:  card.CardGroup,
-			Amount:     card.Amount,
-			CardType:  model.CardTypeReal,
-			BatchNo:   batchNo,
-			UsedStatus: false,
+			CardNo:      card.CardNo,
+			Password:    card.Password,
+			CardGroup:   card.CardGroup,
+			Amount:      card.Amount,
+			CardType:    model.CardTypeReal,
+			BatchNo:     batchNo,
+			CardStatus: model.CardStatusPending,
 		})
 	}
 
@@ -82,8 +82,9 @@ func (s *PriceCardService) List(c echo.Context, req *v1.ListCardReq) (*v1.ListCa
 			Amount:     card.Amount,
 			CardType:   string(card.CardType),
 			BatchNo:    card.BatchNo,
-			UsedStatus: card.UsedStatus,
+			CardStatus: string(card.CardStatus),
 			OrderId:    card.OrderId,
+			Remark:     card.Remark,
 			UsedAt:     usedAt,
 			CreateAt:   card.CreatedAt.Unix(),
 		})

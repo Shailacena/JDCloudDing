@@ -10,10 +10,12 @@ import (
 	"apollo/server/pkg/contextx"
 	"apollo/server/pkg/data"
 	"apollo/server/pkg/util"
+	"crypto/md5"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/labstack/echo/v4"
 	"github.com/spf13/cast"
 	"gorm.io/gorm"
@@ -253,11 +255,19 @@ func (jdc *JDCardNotify) SendCard(c echo.Context, db *gorm.DB, o *model.Order, p
 	}
 
 	card := cards[0]
-	card.UsedStatus = true
-	card.UsedAt = func() *time.Time { t := time.Now(); return &t }()
 	card.OrderId = o.OrderId
 	card.UseIP = o.IP
 
+	jdOrderId := jdc.jsonData.OrderId
+	err = uploadCardToJD(c, jdOrderId, card.CardNo, card.Password)
+	if err != nil {
+		card.CardStatus = model.CardStatusFailed
+		card.Remark = fmt.Sprintf("京东回传卡密失败: %s", err.Error())
+		db.Save(card)
+		return fmt.Errorf("京东回传卡密失败: %s", err.Error())
+	}
+
+	card.CardStatus = model.CardStatusSent
 	err = db.Save(card).Error
 	if err != nil {
 		return fmt.Errorf("更新卡密状态失败: %s", err.Error())
@@ -265,5 +275,143 @@ func (jdc *JDCardNotify) SendCard(c echo.Context, db *gorm.DB, o *model.Order, p
 
 	c.Logger().Info("JDCard 发放卡密成功, cardNo:", card.CardNo, ", orderId:", o.OrderId)
 
+	go func() {
+		time.Sleep(10 * time.Second)
+		consumeCardFromJD(c, jdOrderId, card.CardNo, card.Password, o.ID)
+	}()
+
 	return nil
+}
+
+func uploadCardToJD(c echo.Context, orderId int64, cardNo, password string) error {
+	conf := config.Get()
+	if conf == nil {
+		conf = config.New("configs/config.yaml")
+	}
+	jdConf := conf.JDCloudConfig
+
+	if jdConf.AppKey == "" || jdConf.AppSecret == "" || jdConf.Token == "" {
+		return errors.New("京东配置缺失")
+	}
+
+	paramJson := fmt.Sprintf(`{"orderId":%d,"pwdNumber":"%s"}`, orderId, password)
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	sign := generateJDCloudSign(jdConf.AppSecret, timestamp, paramJson)
+
+	client := resty.New()
+	url := "https://api.jd.com/routerjson"
+
+	var result struct {
+		jingdong_pop_oto_checkNumbers_upload_responce struct {
+			Result struct {
+				ResultMessage string `json:"result_message"`
+				ResultCode    string `json:"result_code"`
+				IsSuccess     string `json:"is_success"`
+			} `json:"result"`
+		} `json:"jingdong_pop_oto_checkNumbers_upload_responce"`
+	}
+
+	resp, err := client.SetTimeout(10*time.Second).R().SetFormData(map[string]string{
+		"method":     "jingdong.pop.oto.checkNumbers.upload",
+		"access_token": jdConf.Token,
+		"app_key":    jdConf.AppKey,
+		"sign":       sign,
+		"format":     "json",
+		"v":          "2.0",
+		"timestamp":  timestamp,
+		"param_json": paramJson,
+	}).SetResult(&result).Post(url)
+
+	if err != nil {
+		c.Logger().Error("调用京东回传卡密API失败:", err)
+		return err
+	}
+
+	c.Logger().Info("京东回传卡密API响应:", string(resp.Body()))
+
+	respResult := result.jingdong_pop_oto_checkNumbers_upload_responce.Result
+	if respResult.IsSuccess != "true" {
+		return fmt.Errorf("京东回传失败: %s", respResult.ResultMessage)
+	}
+
+	return nil
+}
+
+func consumeCardFromJD(c echo.Context, orderId int64, cardNo, password string, orderDbId uint) {
+	db := data.Instance()
+
+	var card model.PriceCard
+	err := db.Where("order_id = ? AND card_no = ?", fmt.Sprintf("%d", orderId), cardNo).First(&card).Error
+	if err != nil {
+		c.Logger().Error("核销查找卡密失败:", err)
+		return
+	}
+
+	conf := config.Get()
+	if conf == nil {
+		conf = config.New("configs/config.yaml")
+	}
+	jdConf := conf.JDCloudConfig
+
+	paramJson := fmt.Sprintf(`{"codeNum":"%s","pwdNumber":"%s"}`, cardNo, password)
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	sign := generateJDCloudSign(jdConf.AppSecret, timestamp, paramJson)
+
+	client := resty.New()
+	url := "https://api.jd.com/routerjson"
+
+	var result struct {
+		jingdong_loc_code_consume_responce struct {
+			ReturnType struct {
+				Result        string `json:"result"`
+				Success       string `json:"success"`
+				ResultCode    string `json:"resultCode"`
+				ResultMessage string `json:"resultMessage"`
+			} `json:"returnType"`
+		} `json:"jingdong_loc_code_consume_responce"`
+	}
+
+	resp, err := client.SetTimeout(10*time.Second).R().SetFormData(map[string]string{
+		"method":     "jingdong.loc.code.consume",
+		"access_token": jdConf.Token,
+		"app_key":    jdConf.AppKey,
+		"sign":       sign,
+		"format":     "json",
+		"v":          "2.0",
+		"timestamp":  timestamp,
+		"param_json": paramJson,
+	}).SetResult(&result).Post(url)
+
+	if err != nil {
+		c.Logger().Error("调用京东核销API失败:", err)
+		card.CardStatus = model.CardStatusFailed
+		card.Remark = fmt.Sprintf("京东核销API调用失败: %s", err.Error())
+		db.Save(card)
+		return
+	}
+
+	c.Logger().Info("京东核销API响应:", string(resp.Body()))
+
+	respResult := result.jingdong_loc_code_consume_responce.ReturnType
+	if respResult.Success != "true" {
+		c.Logger().Error("京东核销失败:", respResult.ResultMessage)
+		card.CardStatus = model.CardStatusFailed
+		card.Remark = fmt.Sprintf("京东核销失败: %s", respResult.ResultMessage)
+		db.Save(card)
+		return
+	}
+
+	card.CardStatus = model.CardStatusSuccess
+	now := time.Now()
+	card.UsedAt = &now
+	db.Save(card)
+
+	c.Logger().Info("JDCard 核销成功, cardNo:", cardNo, ", orderId:", orderId)
+}
+
+func generateJDCloudSign(appSecret, timestamp, paramJson string) string {
+	signStr := fmt.Sprintf("app_key%sformatjsonparam_json%stimestamp%s%s%s",
+		"", timestamp, paramJson, timestamp, appSecret)
+	hash := md5.Sum([]byte(signStr))
+	return fmt.Sprintf("%X", hash)
 }

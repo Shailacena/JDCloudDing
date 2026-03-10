@@ -103,14 +103,22 @@ const VirtualCardPage = () => {
       title: '批次', dataIndex: 'batchNo', key: 'batchNo', align: 'center',
     },
     {
-      title: '状态', dataIndex: 'usedStatus', key: 'usedStatus', align: 'center', render: (_, d) => (
-        <Tag color={d.usedStatus ? 'green' : 'blue'}>
-          {d.usedStatus ? '已使用' : '未使用'}
-        </Tag>
-      )
+      title: '状态', dataIndex: 'cardStatus', key: 'cardStatus', align: 'center', render: (_, d) => {
+        const statusMap: Record<string, { color: string; text: string }> = {
+          pending: { color: 'blue', text: '待发放' },
+          sent: { color: 'orange', text: '已发放' },
+          success: { color: 'green', text: '已核销' },
+          failed: { color: 'red', text: '失败' },
+        };
+        const status = statusMap[d.cardStatus] || { color: 'default', text: d.cardStatus };
+        return <Tag color={status.color}>{status.text}</Tag>;
+      }
     },
     {
       title: '订单ID', dataIndex: 'orderId', key: 'orderId', align: 'center', render: (_, d) => d.orderId || '-',
+    },
+    {
+      title: '备注', dataIndex: 'remark', key: 'remark', align: 'center', render: (_, d) => d.remark || '-',
     },
     {
       title: '创建时间', dataIndex: 'createAt', key: 'createAt', align: 'center', render: (_, d) => dayjs(d.createAt * 1000).format('YYYY-MM-DD HH:mm:ss'),

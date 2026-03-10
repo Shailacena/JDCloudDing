@@ -64,11 +64,11 @@ export const routes: Array<IRoute> = [
     icon: CreditCardOutlined,
     component: null,
     children: [
-      {
-        path: '/list',
-        name: '真实卡密',
-        component: RealCardPage,
-      },
+      // {
+      //   path: '/list',
+      //   name: '真实卡密',
+      //   component: RealCardPage,
+      // },
       {
         path: '/virtualList',
         name: '虚拟卡密',

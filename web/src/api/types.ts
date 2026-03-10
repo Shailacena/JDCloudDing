@@ -713,8 +713,9 @@ export interface IPriceCard {
   amount: number;
   cardType: string;
   batchNo: string;
-  usedStatus: boolean;
+  cardStatus: string;
   orderId: string;
+  remark: string;
   usedAt: number;
   createAt: number;
 }

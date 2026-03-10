@@ -43,17 +43,18 @@ type ListCardResp struct {
 }
 
 type PriceCard struct {
-	Id         uint    `json:"id"`
-	CardNo     string  `json:"cardNo"`
-	Password   string  `json:"password"`
-	CardGroup  string  `json:"cardGroup"`
+	Id         uint   `json:"id"`
+	CardNo     string `json:"cardNo"`
+	Password   string `json:"password"`
+	CardGroup  string `json:"cardGroup"`
 	Amount     float64 `json:"amount"`
-	CardType   string  `json:"cardType"`
-	BatchNo    string  `json:"batchNo"`
-	UsedStatus bool    `json:"usedStatus"`
-	OrderId    string  `json:"orderId"`
-	UsedAt     int64   `json:"usedAt"`
-	CreateAt   int64   `json:"createAt"`
+	CardType   string `json:"cardType"`
+	BatchNo    string `json:"batchNo"`
+	CardStatus string `json:"cardStatus"`
+	OrderId    string `json:"orderId"`
+	Remark     string `json:"remark"`
+	UsedAt     int64  `json:"usedAt"`
+	CreateAt   int64  `json:"createAt"`
 }
 
 type DeleteCardReq struct {

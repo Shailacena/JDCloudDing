@@ -5,6 +5,7 @@ import (
 	"apollo/server/internal/service"
 	"apollo/server/pkg/response"
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v4"
 )
@@ -62,6 +63,13 @@ func (h *PriceCardHandler) List(c echo.Context) error {
 
 	if err := c.Validate(req); err != nil {
 		return err
+	}
+
+	if req.CurrentPage == 0 {
+		req.CurrentPage, _ = strconv.Atoi(c.QueryParam("currentPage"))
+	}
+	if req.PageSize == 0 {
+		req.PageSize, _ = strconv.Atoi(c.QueryParam("pageSize"))
 	}
 
 	resp, err := service.PriceCardServiceInst.List(c, req)

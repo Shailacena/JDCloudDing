@@ -35,7 +35,7 @@ func (r *PriceCardRepo) GenerateVirtualCards(c echo.Context, prefix string, card
 			Amount:     amount,
 			CardType:  model.CardTypeVirtual,
 			BatchNo:   batchNo,
-			UsedStatus: false,
+			CardStatus: model.CardStatusPending,
 		}
 	}
 
@@ -74,11 +74,15 @@ func (r *PriceCardRepo) List(c echo.Context, cardNo, cardGroup, batchNo, startTi
 	}
 
 	var total int64
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	var cards []model.PriceCard
-	err := query.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&cards).Error
-	return cards, total, err
+	if err := query.Order("id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&cards).Error; err != nil {
+		return nil, 0, err
+	}
+	return cards, total, nil
 }
 
 func (r *PriceCardRepo) Delete(c echo.Context, ids []uint) (int64, error) {
@@ -137,7 +141,7 @@ func (r *PriceCardRepo) UseCard(c echo.Context, cardNo, orderId string) error {
 	db := data.Instance()
 	now := time.Now()
 	return db.Model(&model.PriceCard{}).Where("card_no = ?", cardNo).Updates(map[string]interface{}{
-		"used_status": true,
+		"card_status": model.CardStatusSuccess,
 		"order_id":    orderId,
 		"used_at":     now,
 	}).Error
@@ -145,7 +149,7 @@ func (r *PriceCardRepo) UseCard(c echo.Context, cardNo, orderId string) error {
 
 func (r *PriceCardRepo) GetAvailableCards(db *gorm.DB, amount float64, cardType model.CardType, count int) ([]model.PriceCard, error) {
 	var cards []model.PriceCard
-	err := db.Where("amount = ? AND card_type = ? AND used_status = ?", amount, cardType, false).
+	err := db.Where("amount = ? AND card_type = ? AND card_status = ?", amount, cardType, model.CardStatusPending).
 		Limit(count).
 		Find(&cards).Error
 	return cards, err

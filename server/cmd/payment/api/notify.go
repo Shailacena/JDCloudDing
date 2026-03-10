@@ -173,10 +173,15 @@ type JDCloudNotifyReq struct {
 }
 
 type JDCloudOrderPay struct {
-	OrderId   int64  `json:"orderId"`
-	OrderType int    `json:"orderType"`
-	StatusId  int    `json:"statusId"`
-	Timestamp string `json:"timestamp"`
+	OrderId          int64   `json:"orderId"`
+	VenderId         int64   `json:"venderId"`
+	Modified         string  `json:"modified"`
+	OrderType        int     `json:"orderType"`
+	OrderCreateTime  string  `json:"orderCreateTime"`
+	OrderPaymentType int     `json:"orderPaymentType"`
+	Yn               int     `json:"yn"`
+	ErpOrderStatus   int     `json:"erpOrderStatus"`
+	OrderStatus      string  `json:"orderStatus"`
 }
 
 type JDCloudOrderDetailReq struct {
@@ -302,12 +307,19 @@ func JDCloudNotify(c echo.Context) error {
 	}
 
 	c.Logger().Info("OrderId:", orderPay.OrderId)
-	c.Logger().Info("StatusId:", orderPay.StatusId)
+	c.Logger().Info("OrderStatus:", orderPay.OrderStatus)
+	c.Logger().Info("ErpOrderStatus:", orderPay.ErpOrderStatus)
 
 	if orderPay.OrderId == 0 {
 		c.Logger().Error("OrderId为空")
 		return c.String(http.StatusOK, "{\"code\":0,\"message\":\"success\"}")
 	}
+
+	isPaid := orderPay.OrderStatus == "FINISHED" || orderPay.OrderStatus == "WAIT_SELLER_DELIVERY" || orderPay.OrderStatus == "WAIT_GOODS_RECEIVE_CONFIRM" || orderPay.OrderStatus == "RECEIPTS_CONFIRM" ||orderPay.ErpOrderStatus == 10
+	if !isPaid {
+		c.Logger().Error("订单状态不是已支付, OrderStatus:", orderPay.OrderStatus, ", ErpOrderStatus:", orderPay.ErpOrderStatus)
+		return c.String(http.StatusOK, "{\"code\":0,\"message\":\"success\"}")
+	}	
 
 	orderDetail, err := getJDCloudOrderDetail(c, orderPay.OrderId)
 	if err != nil {
