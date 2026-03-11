@@ -5,6 +5,7 @@ import (
 	"apollo/server/internal/model"
 	"apollo/server/internal/repository"
 	"apollo/server/internal/service/partnerx"
+	"apollo/server/pkg/config"
 	"apollo/server/pkg/data"
 	"apollo/server/pkg/headerx"
 	"apollo/server/pkg/timex"
@@ -24,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/google/go-querystring/query"
 	"github.com/labstack/echo/v4"
 	"github.com/samber/lo"
@@ -85,6 +87,8 @@ func (s *PartnerService) Register(c echo.Context, req *v1.PartnerRegisterReq) (*
 		partnerGenerator = partnerx.NewAgiso(req.Type, req)
 	case model.PartnerTypeAnssy:
 		partnerGenerator = partnerx.NewAnssy(req.Type, req)
+	case model.PartnerTypeJDCloud:
+		partnerGenerator = partnerx.NewJDCloud(req.Type, req)
 	default:
 		return nil, errors.New("合作商类型不存在")
 	}
@@ -484,6 +488,10 @@ func (s *PartnerService) SyncGoods(c echo.Context, req *v1.PartnerSyncGoodsReq) 
 		return s.SyncAnssyGoods(c, p)
 	}
 
+	if p.Type == model.PartnerTypeJDCloud {
+		return s.SyncJDCardGoods(c, p)
+	}
+
 	if p.ChannelId != model.ChannelTBPay {
 		return nil, errors.New("仅支持淘宝直付通道")
 	}
@@ -532,6 +540,114 @@ func (s *PartnerService) SyncGoods(c echo.Context, req *v1.PartnerSyncGoodsReq) 
 	}
 
 	return &v1.PartnerSyncGoodsResp{}, nil
+}
+
+func (s *PartnerService) SyncJDCardGoods(c echo.Context, p *model.Partner) (*v1.PartnerSyncGoodsResp, error) {
+	conf := config.Get()
+	if conf == nil {
+		conf = config.New("configs/config.yaml")
+	}
+	jdConf := conf.JDCloudConfig
+
+	if jdConf.AppKey == "" || jdConf.AppSecret == "" || jdConf.Token == "" {
+		return nil, errors.New("京东配置缺失")
+	}
+
+	paramJson := `{"queryType":1,"pageSize":100,"pageIndex":1}`
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	params := map[string]string{
+		"method":       "jingdong.sku.read.searchSkuList",
+		"access_token": jdConf.Token,
+		"app_key":      jdConf.AppKey,
+		"format":       "json",
+		"v":            "2.0",
+		"timestamp":    timestamp,
+		"param_json":   paramJson,
+	}
+	sign := generateJDCloudSign(jdConf.AppSecret, params)
+	params["sign"] = sign
+
+	client := resty.New()
+	url := "https://api.jd.com/routerjson"
+
+	var result struct {
+		jingdong_sku_read_searchSkuList_responce struct {
+			Page struct {
+				Data []struct {
+					SkuId    string `json:"skuId"`
+					SkuName  string `json:"skuName"`
+					WareId   string `json:"wareId"`
+					WareTitle string `json:"wareTitle"`
+					JdPrice  string `json:"jdPrice"`
+					Status   string `json:"status"`
+					Enable   string `json:"enable"`
+				} `json:"data"`
+				TotalItem string `json:"totalItem"`
+			} `json:"page"`
+		} `json:"jingdong_sku_read_searchSkuList_responce"`
+	}
+
+	resp, err := client.SetTimeout(30 * time.Second).R().SetFormData(params).SetResult(&result).Post(url)
+	if err != nil {
+		return nil, fmt.Errorf("调用京东SKU查询API失败: %s", err)
+	}
+
+	c.Logger().Info("京东SKU查询API响应:", string(resp.Body()))
+
+	skuData := result.jingdong_sku_read_searchSkuList_responce.Page
+	if len(skuData.Data) == 0 {
+		return nil, errors.New("未查询到京东商品")
+	}
+
+	_, err = repository.Partner.DeleteAllGoods(c, p.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, sku := range skuData.Data {
+		status := model.GoodsStatusDisabled
+		if sku.Enable == "1" && sku.Status == "1" {
+			status = model.GoodsStatusEnabled
+		}
+
+		price, _ := strconv.ParseFloat(sku.JdPrice, 64)
+		goods := &model.Goods{
+			PartnerId:  p.ID,
+			SkuId:      sku.SkuId,
+			Amount:     util.ToDecimal(price),
+			RealAmount: util.ToDecimal(price),
+			ShopName:   p.Nickname,
+			Status:     status,
+		}
+
+		err := repository.Goods.Create(c, goods, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	c.Logger().Info("JDCard商品同步成功, 共同步%d个商品", len(skuData.Data))
+	return &v1.PartnerSyncGoodsResp{}, nil
+}
+
+func generateJDCloudSign(appSecret string, params map[string]string) string {
+	keys := make([]string, 0, len(params))
+	for k, v := range params {
+		if k == "sign" || len(v) == 0 {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString(appSecret)
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteString(params[k])
+	}
+	b.WriteString(appSecret)
+	sum := md5.Sum([]byte(b.String()))
+	return fmt.Sprintf("%X", sum)
 }
 
 func (s *PartnerService) ListBalanceBill(c echo.Context, req *v1.ListPartnerBalanceBillReq) (*v1.ListPartnerBalanceBillResp, error) {

@@ -96,6 +96,7 @@ type PartnerType int
 const (
 	PartnerTypeAgiso PartnerType = iota + 1
 	PartnerTypeAnssy
+	PartnerTypeJDCloud
 )
 
 type NotifyBizType int

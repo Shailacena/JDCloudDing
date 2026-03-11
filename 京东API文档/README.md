@@ -13,3 +13,6 @@ https://open.jd.com/v2/#/doc/dev-guide?listId=1903
 
 1.0API调用方法详解
 https://open.jd.com/v2/#/doc/dev-guide?listId=1909
+
+sku列表 
+https://open.jd.com/v2/#/doc/api?apiCateId=48&apiId=1227&apiName=jingdong.sku.read.searchSkuList&gwType=0

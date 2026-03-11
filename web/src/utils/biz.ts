@@ -126,6 +126,7 @@ export enum ChannelId {
   ChannelTBECoupon = "TB087888", // 淘宝电子券
   ChannelJDPay = "JS000000", // 京东复制
   ChannelJDCK = "JS111111", // 京东ck
+  ChannelJDCard = "JS222222", // 京东云鼎
 }
 
 export interface IChannelId {
@@ -167,6 +168,13 @@ ChannelPayType[ChannelId.ChannelJDCK] = [
   },
 ];
 
+ChannelPayType[ChannelId.ChannelJDCard] = [
+  {
+    payType: PayType.AppPay,
+    label: "App跳转",
+  },
+];
+
 export let AllChannelId: IChannelId[] = [
   // {
   //   channelId: ChannelId.ChannelTBClipboard,
@@ -191,6 +199,10 @@ export let AllChannelId: IChannelId[] = [
   {
     channelId: ChannelId.ChannelJDCK,
     label: "京东ck",
+  },
+  {
+    channelId: ChannelId.ChannelJDCard,
+    label: "京东LOC",
   },
   // {
   //   channelId: ChannelId.ChannelJDGame,
@@ -255,6 +267,7 @@ export interface IPartnerType {
 export enum PartnerType {
   Agiso = 1,
   Anssy = 2,
+  JDCloud = 3,
 }
 
 export let AllPartnerType: IPartnerType[] = [
@@ -265,6 +278,10 @@ export let AllPartnerType: IPartnerType[] = [
   {
     id: PartnerType.Anssy,
     label: "安式",
+  },
+  {
+    id: PartnerType.JDCloud,
+    label: "京东云鼎",
   },
 ];
 

@@ -64,13 +64,11 @@ func (b *AutoConvertBinder) Bind(i interface{}, c echo.Context) error {
 			if rawVal, ok := data[key]; ok && rawVal != nil {
 				switch field.Kind() {
 				case reflect.String:
-					if field.Type() == reflect.TypeOf("") {
-						switch v := rawVal.(type) {
-						case string:
-							field.SetString(v)
-						case float64:
-							field.SetString(strconv.FormatFloat(v, 'f', -1, 64))
-						}
+					switch v := rawVal.(type) {
+					case string:
+						field.SetString(v)
+					case float64:
+						field.SetString(strconv.FormatFloat(v, 'f', -1, 64))
 					}
 				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 					switch v := rawVal.(type) {
@@ -79,6 +77,24 @@ func (b *AutoConvertBinder) Bind(i interface{}, c echo.Context) error {
 					case string:
 						if num, err := strconv.ParseInt(v, 10, 64); err == nil {
 							field.SetInt(num)
+						}
+					}
+				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+					switch v := rawVal.(type) {
+					case float64:
+						field.SetUint(uint64(v))
+					case string:
+						if num, err := strconv.ParseUint(v, 10, 64); err == nil {
+							field.SetUint(num)
+						}
+					}
+				case reflect.Struct:
+					if field.Type().Kind() == reflect.String {
+						switch v := rawVal.(type) {
+						case string:
+							field.SetString(v)
+						case float64:
+							field.SetString(strconv.FormatFloat(v, 'f', -1, 64))
 						}
 					}
 				case reflect.Float32, reflect.Float64:
