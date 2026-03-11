@@ -11,12 +11,18 @@ import (
 	"apollo/server/pkg/contextx"
 	"apollo/server/pkg/data"
 	"apollo/server/pkg/response"
+	"apollo/server/pkg/util"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -162,36 +168,36 @@ func AnssyNotify(c echo.Context) error {
 }
 
 type JDCloudNotifyReq struct {
-	Token             string `json:"token"`
-	AppKey            string `json:"app_key"`
-	Sign              string `json:"sign"`
-	Timestamp         string `json:"timestamp"`
-	Format            string `json:"format"`
-	V                 string `json:"v"`
-	JdParamJson       string `json:"jd_param_json"`
+	Token              string `json:"token"`
+	AppKey             string `json:"app_key"`
+	Sign               string `json:"sign"`
+	Timestamp          string `json:"timestamp"`
+	Format             string `json:"format"`
+	V                  string `json:"v"`
+	JdParamJson        string `json:"jd_param_json"`
 	EncryptJdParamJson string `json:"encrypt_jd_param_json"`
 }
 
 type JDCloudOrderPay struct {
-	OrderId          int64   `json:"orderId"`
-	VenderId         int64   `json:"venderId"`
-	Modified         string  `json:"modified"`
-	OrderType        int     `json:"orderType"`
-	OrderCreateTime  string  `json:"orderCreateTime"`
-	OrderPaymentType int     `json:"orderPaymentType"`
-	Yn               int     `json:"yn"`
-	ErpOrderStatus   int     `json:"erpOrderStatus"`
-	OrderStatus      string  `json:"orderStatus"`
+	OrderId          int64  `json:"orderId"`
+	VenderId         int64  `json:"venderId"`
+	Modified         string `json:"modified"`
+	OrderType        int    `json:"orderType"`
+	OrderCreateTime  string `json:"orderCreateTime"`
+	OrderPaymentType int    `json:"orderPaymentType"`
+	Yn               int    `json:"yn"`
+	ErpOrderStatus   int    `json:"erpOrderStatus"`
+	OrderStatus      string `json:"orderStatus"`
 }
 
 type JDCloudOrderDetailReq struct {
-	OrderId int64  `json:"orderId"`
-	Token   string `json:"token"`
-	AppKey  string `json:"app_key"`
-	Sign    string `json:"sign"`
-	Format  string `json:"format"`
+	OrderId   int64  `json:"orderId"`
+	Token     string `json:"token"`
+	AppKey    string `json:"app_key"`
+	Sign      string `json:"sign"`
+	Format    string `json:"format"`
 	Timestamp string `json:"timestamp"`
-	V       string `json:"v"`
+	V         string `json:"v"`
 }
 
 type JDCloudOrderDetailResp struct {
@@ -201,24 +207,87 @@ type JDCloudOrderDetailResp struct {
 }
 
 type JDCloudOrderInfo struct {
-	OrderId          int64       `json:"orderId"`
-	OrderType        int         `json:"orderType"`
-	OrderState       string      `json:"orderState"`
-	OrderSellerPrice float64     `json:"orderSellerPrice"`
+	OrderId          int64             `json:"orderId"`
+	OrderType        int               `json:"orderType"`
+	OrderState       string            `json:"orderState"`
+	OrderSellerPrice float64           `json:"orderSellerPrice"`
 	ItemInfoList     []JDCloudItemInfo `json:"itemInfoList"`
 }
 
 type JDCloudItemInfo struct {
-	SkuId   string `json:"skuId"`
-	SkuName string `json:"skuName"`
-	ItemTotal int   `json:"itemTotal"`
+	SkuId     string `json:"skuId"`
+	SkuName   string `json:"skuName"`
+	ItemTotal int    `json:"itemTotal"`
 }
 
-func generateJDCloudSign(appSecret, timestamp, paramJson string) string {
-	signStr := fmt.Sprintf("app_key%sformatjsonparam_json%stimestamp%s%s%s",
-		"", timestamp, paramJson, timestamp, appSecret)
-	hash := md5.Sum([]byte(signStr))
-	return fmt.Sprintf("%X", hash)
+func generateJDCloudSign(appSecret string, params map[string]string) string {
+	keys := make([]string, 0, len(params))
+	for k, v := range params {
+		if k == "sign" || len(v) == 0 {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString(appSecret)
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteString(params[k])
+	}
+	b.WriteString(appSecret)
+	sum := md5.Sum([]byte(b.String()))
+	return fmt.Sprintf("%X", sum)
+}
+
+func pkcs7Unpad(src []byte) ([]byte, error) {
+	if len(src) == 0 {
+		return nil, errors.New("invalid padding size")
+	}
+	pad := int(src[len(src)-1])
+	if pad == 0 || pad > len(src) {
+		return nil, errors.New("invalid padding")
+	}
+	return src[:len(src)-pad], nil
+}
+
+func decryptJDParam(encBase64, key, iv string) (string, error) {
+	if len(encBase64) == 0 {
+		return "", nil
+	}
+	ciphertext, err := base64.StdEncoding.DecodeString(encBase64)
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher([]byte(key))
+	if err != nil {
+		return "", err
+	}
+	ivBytes := []byte(iv)
+	if len(ivBytes) < block.BlockSize() {
+		return "", errors.New("invalid iv size")
+	}
+	mode := cipher.NewCBCDecrypter(block, ivBytes[:block.BlockSize()])
+	buf := make([]byte, len(ciphertext))
+	mode.CryptBlocks(buf, ciphertext)
+	buf, err = pkcs7Unpad(buf)
+	if err != nil {
+		return "", err
+	}
+	return string(buf), nil
+}
+
+func verifyJDCloudCallbackSign(conf *config.ServerConfig, req JDCloudNotifyReq, effectiveJdParamJson string) bool {
+	params := map[string]string{
+		"token":         req.Token,
+		"app_key":       req.AppKey,
+		"timestamp":     req.Timestamp,
+		"format":        req.Format,
+		"v":             req.V,
+		"jd_param_json": effectiveJdParamJson,
+	}
+	expect := generateJDCloudSign(conf.JDCloudConfig.AppSecret, params)
+	return strings.EqualFold(expect, req.Sign)
 }
 
 func getJDCloudOrderDetail(c echo.Context, orderId int64) (*JDCloudOrderInfo, error) {
@@ -232,32 +301,33 @@ func getJDCloudOrderDetail(c echo.Context, orderId int64) (*JDCloudOrderInfo, er
 		return nil, errors.New("京东配置缺失app_key或app_secret")
 	}
 
-	paramJson := fmt.Sprintf(`{"orderId":%d}`, orderId)
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	sign := generateJDCloudSign(jdConf.AppSecret, timestamp, paramJson)
-
 	client := resty.New()
 	url := "https://api.jd.com/routerjson"
 	var result struct {
 		jingdong_pop_order_get_responce struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
+			Code            string `json:"code"`
+			Message         string `json:"message"`
 			OrderDetailInfo struct {
 				OrderInfo JDCloudOrderInfo `json:"orderInfo"`
 			} `json:"orderDetailInfo"`
 		} `json:"jingdong_pop_order_get_responce"`
 	}
 
-	resp, err := client.SetTimeout(10*time.Second).R().SetFormData(map[string]string{
-		"method":        "jingdong.pop.order.get",
+	paramJson := fmt.Sprintf(`{"orderId":%d}`, orderId)
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	params := map[string]string{
+		"method":       "jingdong.pop.order.get",
 		"access_token": jdConf.Token,
 		"app_key":      jdConf.AppKey,
-		"sign":         sign,
 		"format":       "json",
 		"v":            "1.0",
 		"timestamp":    timestamp,
 		"param_json":   paramJson,
-	}).SetResult(&result).Post(url)
+	}
+	sign := generateJDCloudSign(jdConf.AppSecret, params)
+	params["sign"] = sign
+
+	resp, err := client.SetTimeout(10 * time.Second).R().SetFormData(params).SetResult(&result).Post(url)
 
 	if err != nil {
 		c.Logger().Error("调用京东API失败:", err)
@@ -295,14 +365,37 @@ func JDCloudNotify(c echo.Context) error {
 	c.Logger().Info("Timestamp:", req.Timestamp)
 	c.Logger().Info("JdParamJson:", req.JdParamJson)
 
-	var orderPay JDCloudOrderPay
-	if req.JdParamJson != "" {
-		if err := json.Unmarshal([]byte(req.JdParamJson), &orderPay); err != nil {
-			c.Logger().Error("解析jd_param_json失败:", err)
-			return c.String(http.StatusBadRequest, "参数解析错误")
+	conf := config.Get()
+	if conf == nil {
+		conf = config.New("configs/config.yaml")
+	}
+	// 解密与签名校验：优先使用密文字段，密文存在时需以解密后的内容参与签名校验
+	appSecret := conf.JDCloudConfig.AppSecret
+	effectiveJdParam := req.JdParamJson
+	if len(req.EncryptJdParamJson) > 0 && len(appSecret) >= 32 {
+		key := appSecret[:16]
+		iv := appSecret[16:32]
+		plain, derr := decryptJDParam(req.EncryptJdParamJson, key, iv)
+		if derr != nil {
+			c.Logger().Error("解密encrypt_jd_param_json失败:", derr)
+			// 继续使用明文字段尝试签名
+		} else {
+			effectiveJdParam = plain
 		}
-	} else if req.EncryptJdParamJson != "" {
-		c.Logger().Info("收到加密参数，需要解密:", req.EncryptJdParamJson)
+	}
+
+	if !verifyJDCloudCallbackSign(conf, req, effectiveJdParam) {
+		c.Logger().Error("回调签名校验失败")
+		return c.String(http.StatusOK, "{\"code\":0,\"message\":\"success\"}")
+	}
+	// 解析最终业务数据
+	var orderPay JDCloudOrderPay
+	if len(effectiveJdParam) == 0 {
+		c.Logger().Error("业务数据为空")
+		return c.String(http.StatusOK, "{\"code\":0,\"message\":\"success\"}")
+	}
+	if err := json.Unmarshal([]byte(effectiveJdParam), &orderPay); err != nil {
+		c.Logger().Error("解析业务数据失败:", err)
 		return c.String(http.StatusOK, "{\"code\":0,\"message\":\"success\"}")
 	}
 
@@ -315,11 +408,11 @@ func JDCloudNotify(c echo.Context) error {
 		return c.String(http.StatusOK, "{\"code\":0,\"message\":\"success\"}")
 	}
 
-	isPaid := orderPay.OrderStatus == "FINISHED" || orderPay.OrderStatus == "WAIT_SELLER_DELIVERY" || orderPay.OrderStatus == "WAIT_GOODS_RECEIVE_CONFIRM" || orderPay.OrderStatus == "RECEIPTS_CONFIRM" ||orderPay.ErpOrderStatus == 10
+	isPaid := orderPay.OrderStatus == "FINISHED" || orderPay.OrderStatus == "WAIT_SELLER_DELIVERY" || orderPay.OrderStatus == "WAIT_GOODS_RECEIVE_CONFIRM" || orderPay.OrderStatus == "RECEIPTS_CONFIRM" || orderPay.ErpOrderStatus == 10
 	if !isPaid {
 		c.Logger().Error("订单状态不是已支付, OrderStatus:", orderPay.OrderStatus, ", ErpOrderStatus:", orderPay.ErpOrderStatus)
 		return c.String(http.StatusOK, "{\"code\":0,\"message\":\"success\"}")
-	}	
+	}
 
 	orderDetail, err := getJDCloudOrderDetail(c, orderPay.OrderId)
 	if err != nil {
@@ -345,6 +438,8 @@ func JDCloudNotify(c echo.Context) error {
 
 	if o != nil && o.Status == 0 {
 		o.Status = 1
+		o.ReceivedAmount = util.ToDecimal(orderDetail.OrderSellerPrice)
+		o.PayAt = time.Now()
 		err = db.Save(o).Error
 		if err != nil {
 			c.Logger().Error("更新订单状态失败:", err)
@@ -359,7 +454,8 @@ func JDCloudNotify(c echo.Context) error {
 		return c.String(http.StatusOK, "{\"code\":0,\"message\":\"success\"}")
 	}
 
-	jdc := channel.GetJDCardNotify(db, orderPay.OrderId, skuId, "")
+	c.Logger().Infof("JDCloudOrderChangeJsonData dispatch: orderId=%d, skuId=%s, orderCreateTime=%s", orderPay.OrderId, skuId, orderPay.OrderCreateTime)
+	jdc := channel.GetJDCardNotify(db, orderPay.OrderId, skuId, orderPay.OrderCreateTime)
 	if jdc != nil {
 		err = jdc.Handle(c)
 		if err != nil {

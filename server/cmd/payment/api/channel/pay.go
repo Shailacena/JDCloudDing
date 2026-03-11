@@ -55,6 +55,6 @@ func GetNotifyByPlatform(fromPlatform, timestamp, aopic, sign, jsonStr string) (
 	return instance, nil
 }
 
-func GetJDCardNotify(db *gorm.DB, orderId int64, skuId string, gameAccount string) *JDCardNotify {
-	return NewJDCardNotify(db, orderId, skuId, gameAccount)
+func GetJDCardNotify(db *gorm.DB, orderId int64, skuId string, orderCreateTime string) *JDCardNotify {
+	return NewJDCardNotify(db, orderId, skuId, orderCreateTime)
 }

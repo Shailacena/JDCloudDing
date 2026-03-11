@@ -13,11 +13,12 @@ import (
 	"crypto/md5"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/labstack/echo/v4"
-	"github.com/spf13/cast"
 	"gorm.io/gorm"
 )
 
@@ -69,6 +70,7 @@ func (jd *JDCard) FindGoods(c echo.Context, channelId string, merchantId int32, 
 			continue
 		}
 
+		// 京东入鼎LOC商品
 		order := model.Order{}
 		err = db.Where("sku_id = ? AND end_lock_at >= ?", res.SkuId, time.Now()).Order("created_at desc").First(&order).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -123,17 +125,16 @@ func (jd *JDCard) GenPayUrl(c echo.Context, baseUrl string, o model.Order, numId
 type JDCardNotify struct {
 	db *gorm.DB
 
-	jsonData types.JDJsonData
+	jsonData types.JDCloudOrderChangeJsonData
 	skuId    string
 }
 
-func NewJDCardNotify(db *gorm.DB, orderId int64, skuId string, gameAccount string) *JDCardNotify {
+func NewJDCardNotify(db *gorm.DB, orderId int64, skuId string, orderCreateTime string) *JDCardNotify {
 	return &JDCardNotify{
 		db: db,
-		jsonData: types.JDJsonData{
-			OrderId:     orderId,
-			SkuId:       cast.ToInt64(skuId),
-			GameAccount: gameAccount,
+		jsonData: types.JDCloudOrderChangeJsonData{
+			OrderId:         orderId,
+			OrderCreateTime: orderCreateTime,
 		},
 		skuId: skuId,
 	}
@@ -144,9 +145,16 @@ func (jdc *JDCardNotify) Handle(c echo.Context) error {
 	jsonData := jdc.jsonData
 	skuId := jdc.skuId
 
-	c.Logger().Infof("JDCardNotify skuId: %s, orderId: %d", skuId, jsonData.OrderId)
+	c.Logger().Infof("JDCloudOrderChangeJsonData skuId: %s, orderId: %d", skuId, jsonData.OrderId)
 
-	o, err := repository.Order.GetBySkuIdDarkNumber(c, db, skuId, fmt.Sprintf("%d", jsonData.OrderId))
+	createdStr := jsonData.OrderCreateTime
+	if len(createdStr) == 0 {
+		createdStr = time.Now().Format(time.DateTime)
+	}
+	if strings.Contains(createdStr, "T") {
+		createdStr = strings.Replace(createdStr, "T", " ", 1)
+	}
+	o, err := common.FindOrderBySkuId(c, db, skuId, createdStr)
 	if err != nil {
 		return fmt.Errorf("findOrderBySkuId: %s", err.Error())
 	}
@@ -169,12 +177,19 @@ func (jdc *JDCardNotify) Handle(c echo.Context) error {
 	return nil
 }
 
-func (jdc *JDCardNotify) Transaction(c echo.Context, db *gorm.DB, jsonData types.JDJsonData, skuId string, partner *model.Partner) error {
+func (jdc *JDCardNotify) Transaction(c echo.Context, db *gorm.DB, jsonData types.JDCloudOrderChangeJsonData, skuId string, partner *model.Partner) error {
 	var o *model.Order
 	var err error
 
 	err = db.Transaction(func(tx *gorm.DB) error {
-		o, err = repository.Order.GetBySkuIdDarkNumber(c, tx, skuId, fmt.Sprintf("%d", jsonData.OrderId))
+		createdStr := jsonData.OrderCreateTime
+		if len(createdStr) == 0 {
+			createdStr = time.Now().Format(time.DateTime)
+		}
+		if strings.Contains(createdStr, "T") {
+			createdStr = strings.Replace(createdStr, "T", " ", 1)
+		}
+		o, err = common.FindOrderBySkuId(c, tx, skuId, createdStr)
 		if err != nil {
 			return fmt.Errorf("findOrderBySkuId, skuId=%s, error: %s", skuId, err.Error())
 		}
@@ -182,17 +197,23 @@ func (jdc *JDCardNotify) Transaction(c echo.Context, db *gorm.DB, jsonData types
 		if o == nil {
 			return fmt.Errorf("订单未找到, skuId=%s, orderId=%d", skuId, jsonData.OrderId)
 		}
+		if o.SkuId != skuId {
+			return fmt.Errorf("订单sku不匹配, expect=%s, actual=%s", skuId, o.SkuId)
+		}
 
 		if o.Status == model.OrderStatusFinish {
 			return fmt.Errorf("订单已完成, orderId=%s, skuId=%s, order.Status=%d", o.OrderId, skuId, o.Status)
 		}
 
 		o.Status = model.OrderStatusPaid
-		o.ReceivedAmount = util.ToDecimal(cast.ToFloat64(jsonData.TotalPrice))
 
 		var payTime time.Time
-		if len(jsonData.CreateTime) > 0 {
-			payTime, err = time.Parse("2006-01-02T15:04:05", jsonData.CreateTime)
+		if len(jsonData.OrderCreateTime) > 0 {
+			createdStr := jsonData.OrderCreateTime
+			if strings.Contains(createdStr, "T") {
+				createdStr = strings.Replace(createdStr, "T", " ", 1)
+			}
+			payTime, err = time.Parse(time.DateTime, createdStr)
 			if err != nil {
 				return err
 			}
@@ -202,7 +223,7 @@ func (jdc *JDCardNotify) Transaction(c echo.Context, db *gorm.DB, jsonData types
 		params := common.UpdateOrderParams{
 			PartnerOrderId: fmt.Sprintf("%d", jsonData.OrderId),
 			OrderId:        o.OrderId,
-			PayAccount:     jsonData.Pin,
+			PayAccount:     "",
 			PayTime:        payTime,
 			ReceivedAmount: o.ReceivedAmount,
 		}
@@ -244,6 +265,16 @@ func (jdc *JDCardNotify) SendCard(c echo.Context, db *gorm.DB, o *model.Order, p
 	c.Logger().Info("JDCard 开始发放卡密, orderId:", o.OrderId)
 
 	amount := o.Amount
+
+	var exist model.PriceCard
+	err := db.Where("order_id = ?", o.OrderId).First(&exist).Error
+	if err == nil {
+		c.Logger().Info("订单已有卡密，跳过发放, orderId:", o.OrderId, ", cardNo:", exist.CardNo)
+		return nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("查询已发卡密失败: %s", err.Error())
+	}
 
 	cards, err := repository.PriceCard.GetAvailableCards(db, amount, model.CardTypeReal, 1)
 	if err != nil {
@@ -294,9 +325,19 @@ func uploadCardToJD(c echo.Context, orderId int64, cardNo, password string) erro
 		return errors.New("京东配置缺失")
 	}
 
-	paramJson := fmt.Sprintf(`{"orderId":%d,"pwdNumber":"%s"}`, orderId, password)
+	paramJson := fmt.Sprintf(`{"orderId":%d,"cardNumber":"%s","pwdNumber":"%s"}`, orderId, cardNo, password)
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	sign := generateJDCloudSign(jdConf.AppSecret, timestamp, paramJson)
+	params := map[string]string{
+		"method":       "jingdong.pop.oto.checkNumbers.upload",
+		"access_token": jdConf.Token,
+		"app_key":      jdConf.AppKey,
+		"format":       "json",
+		"v":            "2.0",
+		"timestamp":    timestamp,
+		"param_json":   paramJson,
+	}
+	sign := generateJDCloudSign(jdConf.AppSecret, params)
+	params["sign"] = sign
 
 	client := resty.New()
 	url := "https://api.jd.com/routerjson"
@@ -311,16 +352,7 @@ func uploadCardToJD(c echo.Context, orderId int64, cardNo, password string) erro
 		} `json:"jingdong_pop_oto_checkNumbers_upload_responce"`
 	}
 
-	resp, err := client.SetTimeout(10*time.Second).R().SetFormData(map[string]string{
-		"method":     "jingdong.pop.oto.checkNumbers.upload",
-		"access_token": jdConf.Token,
-		"app_key":    jdConf.AppKey,
-		"sign":       sign,
-		"format":     "json",
-		"v":          "2.0",
-		"timestamp":  timestamp,
-		"param_json": paramJson,
-	}).SetResult(&result).Post(url)
+	resp, err := client.SetTimeout(10 * time.Second).R().SetFormData(params).SetResult(&result).Post(url)
 
 	if err != nil {
 		c.Logger().Error("调用京东回传卡密API失败:", err)
@@ -341,7 +373,7 @@ func consumeCardFromJD(c echo.Context, orderId int64, cardNo, password string, o
 	db := data.Instance()
 
 	var card model.PriceCard
-	err := db.Where("order_id = ? AND card_no = ?", fmt.Sprintf("%d", orderId), cardNo).First(&card).Error
+	err := db.Where("card_no = ?", cardNo).First(&card).Error
 	if err != nil {
 		c.Logger().Error("核销查找卡密失败:", err)
 		return
@@ -355,7 +387,17 @@ func consumeCardFromJD(c echo.Context, orderId int64, cardNo, password string, o
 
 	paramJson := fmt.Sprintf(`{"codeNum":"%s","pwdNumber":"%s"}`, cardNo, password)
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	sign := generateJDCloudSign(jdConf.AppSecret, timestamp, paramJson)
+	params := map[string]string{
+		"method":       "jingdong.loc.code.consume",
+		"access_token": jdConf.Token,
+		"app_key":      jdConf.AppKey,
+		"format":       "json",
+		"v":            "2.0",
+		"timestamp":    timestamp,
+		"param_json":   paramJson,
+	}
+	sign := generateJDCloudSign(jdConf.AppSecret, params)
+	params["sign"] = sign
 
 	client := resty.New()
 	url := "https://api.jd.com/routerjson"
@@ -371,16 +413,7 @@ func consumeCardFromJD(c echo.Context, orderId int64, cardNo, password string, o
 		} `json:"jingdong_loc_code_consume_responce"`
 	}
 
-	resp, err := client.SetTimeout(10*time.Second).R().SetFormData(map[string]string{
-		"method":     "jingdong.loc.code.consume",
-		"access_token": jdConf.Token,
-		"app_key":    jdConf.AppKey,
-		"sign":       sign,
-		"format":     "json",
-		"v":          "2.0",
-		"timestamp":  timestamp,
-		"param_json": paramJson,
-	}).SetResult(&result).Post(url)
+	resp, err := client.SetTimeout(10 * time.Second).R().SetFormData(params).SetResult(&result).Post(url)
 
 	if err != nil {
 		c.Logger().Error("调用京东核销API失败:", err)
@@ -409,9 +442,22 @@ func consumeCardFromJD(c echo.Context, orderId int64, cardNo, password string, o
 	c.Logger().Info("JDCard 核销成功, cardNo:", cardNo, ", orderId:", orderId)
 }
 
-func generateJDCloudSign(appSecret, timestamp, paramJson string) string {
-	signStr := fmt.Sprintf("app_key%sformatjsonparam_json%stimestamp%s%s%s",
-		"", timestamp, paramJson, timestamp, appSecret)
-	hash := md5.Sum([]byte(signStr))
-	return fmt.Sprintf("%X", hash)
+func generateJDCloudSign(appSecret string, params map[string]string) string {
+	keys := make([]string, 0, len(params))
+	for k, v := range params {
+		if k == "sign" || len(v) == 0 {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString(appSecret)
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteString(params[k])
+	}
+	b.WriteString(appSecret)
+	sum := md5.Sum([]byte(b.String()))
+	return fmt.Sprintf("%X", sum)
 }

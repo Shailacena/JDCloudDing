@@ -130,3 +130,16 @@ type AnssyNotifyReq struct {
 	TBUserNick  string `json:"taobao_user_nick"` // 店铺昵称
 	Sign        string `json:"sign"`             // 签名
 }
+
+// 京东 POP 订单变更消息体
+type JDCloudOrderChangeJsonData struct {
+	OrderId          int64  `json:"orderId"`
+	VenderId         int64  `json:"venderId"`
+	Modified         string `json:"modified"`
+	OrderType        int    `json:"orderType"`
+	OrderCreateTime  string `json:"orderCreateTime"`
+	OrderPaymentType int    `json:"orderPaymentType"`
+	Yn               int    `json:"yn"`
+	ErpOrderStatus   int    `json:"erpOrderStatus"`
+	OrderStatus      string `json:"orderStatus"`
+}
