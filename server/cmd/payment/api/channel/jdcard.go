@@ -379,6 +379,35 @@ func consumeCardFromJD(c echo.Context, orderId int64, cardNo, password string, o
 		return
 	}
 
+	maxRetries := 3
+	retryInterval := 10 * time.Second
+
+	for retry := 0; retry < maxRetries; retry++ {
+		if retry > 0 {
+			c.Logger().Info("京东核销第%d次重试, cardNo: %s", retry+1, cardNo)
+			time.Sleep(retryInterval)
+		}
+
+		err = doConsumeCardFromJD(c, cardNo, password)
+		if err == nil {
+			card.CardStatus = model.CardStatusSuccess
+			now := time.Now()
+			card.UsedAt = &now
+			db.Save(card)
+			c.Logger().Info("JDCard 核销成功, cardNo:", cardNo, ", orderId:", orderId)
+			return
+		}
+
+		c.Logger().Error("京东核销失败:", err)
+		card.Remark = fmt.Sprintf("京东核销失败(第%d次): %s", retry+1, err.Error())
+	}
+
+	card.CardStatus = model.CardStatusFailed
+	db.Save(card)
+	c.Logger().Error("京东核销重试%d次后仍失败, cardNo: %s, orderId: %d", maxRetries, cardNo, orderId)
+}
+
+func doConsumeCardFromJD(c echo.Context, cardNo, password string) error {
 	conf := config.Get()
 	if conf == nil {
 		conf = config.New("configs/config.yaml")
@@ -414,32 +443,18 @@ func consumeCardFromJD(c echo.Context, orderId int64, cardNo, password string, o
 	}
 
 	resp, err := client.SetTimeout(10 * time.Second).R().SetFormData(params).SetResult(&result).Post(url)
-
 	if err != nil {
-		c.Logger().Error("调用京东核销API失败:", err)
-		card.CardStatus = model.CardStatusFailed
-		card.Remark = fmt.Sprintf("京东核销API调用失败: %s", err.Error())
-		db.Save(card)
-		return
+		return fmt.Errorf("API调用失败: %s", err)
 	}
 
 	c.Logger().Info("京东核销API响应:", string(resp.Body()))
 
 	respResult := result.jingdong_loc_code_consume_responce.ReturnType
 	if respResult.Success != "true" {
-		c.Logger().Error("京东核销失败:", respResult.ResultMessage)
-		card.CardStatus = model.CardStatusFailed
-		card.Remark = fmt.Sprintf("京东核销失败: %s", respResult.ResultMessage)
-		db.Save(card)
-		return
+		return fmt.Errorf("核销失败: %s", respResult.ResultMessage)
 	}
 
-	card.CardStatus = model.CardStatusSuccess
-	now := time.Now()
-	card.UsedAt = &now
-	db.Save(card)
-
-	c.Logger().Info("JDCard 核销成功, cardNo:", cardNo, ", orderId:", orderId)
+	return nil
 }
 
 func generateJDCloudSign(appSecret string, params map[string]string) string {
