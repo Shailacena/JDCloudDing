@@ -263,24 +263,24 @@ func (s *PartnerService) List(c echo.Context, req *v1.ListPartnerReq) (*v1.ListP
 		}
 
 		list = append(list, &v1.Partner{
-			Id:            p.ID,
-			Nickname:      p.Nickname,
-			ChannelId:     p.ChannelId,
-			PayType:       p.PayType,
-			Balance:       util.ToDecimal(p.Balance),
-			Priority:      p.Priority,
-			SuperiorAgent: p.SuperiorAgent,
-			Level:         p.Level,
-			StockAmount:   p.StockAmount,
-			RechargeTime:  p.RechargeTime,
-			PrivateKey:    p.PrivateKey,
-			AqsAppSecret:  p.AqsAppSecret,
-			AqsToken:      p.AqsToken,
-			Enable:        int(p.Enable),
-			Remark:        p.Remark,
-			Type:          p.Type,
-			UrlKey:        p.UrlKey,
-			ParentId:      p.ParentId,
+			Id:               p.ID,
+			Nickname:         p.Nickname,
+			ChannelId:        p.ChannelId,
+			PayType:          p.PayType,
+			Balance:          util.ToDecimal(p.Balance),
+			Priority:         p.Priority,
+			SuperiorAgent:    p.SuperiorAgent,
+			Level:            p.Level,
+			StockAmount:      p.StockAmount,
+			RechargeTime:     p.RechargeTime,
+			PrivateKey:       p.PrivateKey,
+			AqsAppSecret:     p.AqsAppSecret,
+			AqsToken:         p.AqsToken,
+			Enable:           int(p.Enable),
+			Remark:           p.Remark,
+			Type:             p.Type,
+			UrlKey:           p.UrlKey,
+			ParentId:         p.ParentId,
 			DarkNumberLength: p.DarkNumberLength,
 
 			AnssyAppSecret: p.AnssyAppSecret,
@@ -467,9 +467,6 @@ func fetchAqsGoods(secret string, token string) (*SyncGoodRspData, error) {
 			datas.Data = append(datas.Data, resp.Data...)
 
 			if !datas.IsSuccess || len(resp.Data) < 200 {
-				fmt.Printf("icccccccccccccccccccccc: pageNo %d\n", pageNo)
-				fmt.Printf("icccccccccccccccccccccc: len resp.Data %d\n", len(resp.Data))
-				fmt.Printf("icccccccccccccccccccccc: len datas.Data %d\n", len(datas.Data))
 				break
 			}
 		}
@@ -492,6 +489,14 @@ func (s *PartnerService) SyncGoods(c echo.Context, req *v1.PartnerSyncGoodsReq) 
 		return s.SyncJDCardGoods(c, p)
 	}
 
+	if p.ChannelId == model.ChannelTBPay {
+		return s.SyncTBGoods(c, p)
+	}
+
+	return &v1.PartnerSyncGoodsResp{}, nil
+}
+
+func (s *PartnerService) SyncTBGoods(c echo.Context, p *model.Partner) (*v1.PartnerSyncGoodsResp, error) {
 	if p.ChannelId != model.ChannelTBPay {
 		return nil, errors.New("仅支持淘宝直付通道")
 	}
@@ -553,63 +558,74 @@ func (s *PartnerService) SyncJDCardGoods(c echo.Context, p *model.Partner) (*v1.
 		return nil, errors.New("京东配置缺失")
 	}
 
-	paramJson := `{"queryType":1,"pageSize":100,"pageIndex":1}`
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	params := map[string]string{
-		"method":       "jingdong.sku.read.searchSkuList",
-		"access_token": jdConf.Token,
-		"app_key":      jdConf.AppKey,
-		"format":       "json",
-		"v":            "2.0",
-		"timestamp":    timestamp,
-		"param_json":   paramJson,
-	}
-	sign := generateJDCloudSign(jdConf.AppSecret, params)
-	params["sign"] = sign
-
+	pageSize := 100
+	pageIndex := 1
+	all := make([]struct {
+		SkuId     string `json:"skuId"`
+		SkuName   string `json:"skuName"`
+		WareId    string `json:"wareId"`
+		WareTitle string `json:"wareTitle"`
+		JdPrice   string `json:"jdPrice"`
+		Status    string `json:"status"`
+		Enable    string `json:"enable"`
+	}, 0, pageSize)
 	client := resty.New()
 	url := "https://api.jd.com/routerjson"
-
-	var result struct {
-		jingdong_sku_read_searchSkuList_responce struct {
-			Page struct {
-				Data []struct {
-					SkuId    string `json:"skuId"`
-					SkuName  string `json:"skuName"`
-					WareId   string `json:"wareId"`
-					WareTitle string `json:"wareTitle"`
-					JdPrice  string `json:"jdPrice"`
-					Status   string `json:"status"`
-					Enable   string `json:"enable"`
-				} `json:"data"`
-				TotalItem string `json:"totalItem"`
-			} `json:"page"`
-		} `json:"jingdong_sku_read_searchSkuList_responce"`
+	for {
+		paramJson := fmt.Sprintf(`{"queryType":1,"pageSize":%d,"pageIndex":%d}`, pageSize, pageIndex)
+		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		params := map[string]string{
+			"method":       "jingdong.sku.read.searchSkuList",
+			"access_token": jdConf.Token,
+			"app_key":      jdConf.AppKey,
+			"format":       "json",
+			"v":            "2.0",
+			"timestamp":    timestamp,
+			"param_json":   paramJson,
+		}
+		sign := generateJDCloudSign(jdConf.AppSecret, params)
+		params["sign"] = sign
+		var result struct {
+			jingdong_sku_read_searchSkuList_responce struct {
+				Page struct {
+					Data []struct {
+						SkuId     string `json:"skuId"`
+						SkuName   string `json:"skuName"`
+						WareId    string `json:"wareId"`
+						WareTitle string `json:"wareTitle"`
+						JdPrice   string `json:"jdPrice"`
+						Status    string `json:"status"`
+						Enable    string `json:"enable"`
+					} `json:"data"`
+					TotalItem string `json:"totalItem"`
+				} `json:"page"`
+			} `json:"jingdong_sku_read_searchSkuList_responce"`
+		}
+		resp, err := client.SetTimeout(30 * time.Second).R().SetFormData(params).SetResult(&result).Post(url)
+		if err != nil {
+			return nil, fmt.Errorf("调用京东SKU查询API失败: %s", err)
+		}
+		c.Logger().Info("京东SKU查询API响应:", string(resp.Body()))
+		page := result.jingdong_sku_read_searchSkuList_responce.Page
+		if len(page.Data) == 0 && pageIndex == 1 {
+			return nil, errors.New("未查询到京东商品")
+		}
+		all = append(all, page.Data...)
+		if len(page.Data) < pageSize {
+			break
+		}
+		pageIndex++
+		time.Sleep(200 * time.Millisecond)
 	}
-
-	resp, err := client.SetTimeout(30 * time.Second).R().SetFormData(params).SetResult(&result).Post(url)
-	if err != nil {
-		return nil, fmt.Errorf("调用京东SKU查询API失败: %s", err)
-	}
-
-	c.Logger().Info("京东SKU查询API响应:", string(resp.Body()))
-
-	skuData := result.jingdong_sku_read_searchSkuList_responce.Page
-	if len(skuData.Data) == 0 {
-		return nil, errors.New("未查询到京东商品")
-	}
-
-	_, err = repository.Partner.DeleteAllGoods(c, p.ID)
+	_, err := repository.Partner.DeleteAllGoods(c, p.ID)
 	if err != nil {
 		return nil, err
 	}
-
-	for _, sku := range skuData.Data {
+	for _, sku := range all {
 		status := model.GoodsStatusDisabled
 		if sku.Enable == "1" && sku.Status == "1" {
 			status = model.GoodsStatusEnabled
 		}
-
 		price, _ := strconv.ParseFloat(sku.JdPrice, 64)
 		goods := &model.Goods{
 			PartnerId:  p.ID,
@@ -619,14 +635,12 @@ func (s *PartnerService) SyncJDCardGoods(c echo.Context, p *model.Partner) (*v1.
 			ShopName:   p.Nickname,
 			Status:     status,
 		}
-
 		err := repository.Goods.Create(c, goods, false)
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	c.Logger().Info("JDCard商品同步成功, 共同步%d个商品", len(skuData.Data))
+	c.Logger().Info("JDCard商品同步成功, 共同步%d个商品", len(all))
 	return &v1.PartnerSyncGoodsResp{}, nil
 }
 
